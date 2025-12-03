@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>AutoGrade</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+    <h1 class="title">AutoGrade</h1>
+
+    <!-- OCR Upload Section -->
+    <div class="card">
+        <h2>Upload Exam Images</h2>
+        <input id="fileInput" type="file" multiple accept="image/*,.pdf">
+        <button id="ocrBtn">Run OCR</button>
+    </div>
+
+    <!-- OCR Output -->
+    <div id="ocrOutput" class="card hidden"></div>
+
+    <!-- Question Text -->
+    <div class="card">
+        <h2>Question</h2>
+        <textarea id="questionText" placeholder="Type the question here..."></textarea>
+    </div>
+
+    <!-- Expert Answers -->
+    <div class="card">
+        <h2>Expert Answers</h2>
+        <textarea class="expert" placeholder="Expert Answer #1"></textarea>
+        <textarea class="expert" placeholder="Expert Answer #2"></textarea>
+        <textarea class="expert" placeholder="Expert Answer #3"></textarea>
+    </div>
+
+    <!-- Student Answer -->
+    <div class="card">
+        <h2>Student Answer</h2>
+        <textarea id="studentAnswer" placeholder="Extracted or typed student's answer..."></textarea>
+    </div>
+
+    <!-- Grade Button -->
+    <button id="gradeBtn" class="primary">Grade Answer</button>
+
+    <!-- Result Output -->
+    <div id="resultBox" class="card hidden"></div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
