@@ -1,0 +1,5 @@
+
+Answer 2: The "Workload Optimization" Approach
+Accelerators like GPUs and TPUs are designed specifically to handle the mathematical intensity of neural networks, which fundamentally differs from general-purpose computing. A CPU is a "scalar" processor, meaning it is excellent at processing instructions one by one (like running an operating system), but it hits a bottleneck when processing the massive datasets required for AI. In contrast, GPUs and TPUs employ a "vector" or "matrix" processing approach, allowing them to execute billions of calculations in parallel.
+
+This acceleration is achieved through two main hardware features: high-density compute units and superior memory throughput. GPUs and TPUs dedicate more silicon to Arithmetic Logic Units (ALUs) for math and less to cache and control flow compared to CPUs. Additionally, the use of specialized high-speed memory (HBM) ensures that these compute units are constantly fed with data, offering bandwidths measured in terabytes per second, vastly outperforming the gigabytes per second available to CPUs using standard RAM.

@@ -1,0 +1,12 @@
+Answer 1: The "General Concepts" Answer
+"CPUs are designed to do heavy tasks one by one, which is good for running programs but bad for AI. GPUs and TPUs are faster because they have thousands of cores instead of just a few, allowing them to do many calculations at the exact same time. Since AI requires training on huge amounts of data, doing it in parallel is much more efficient. Also, the normal RAM in a computer is often too slow to keep up with the processing, whereas GPUs have their own dedicated memory that is faster, so the system doesn't lag while waiting for data."
+
+
+
+Answer 2: The "Solid Technical" Answer
+"The main difference is that a CPU is a serial processor, while GPUs and TPUs are parallel processors. AI training involves a lot of matrix math, and because GPUs have thousands of cores, they can perform these matrix operations simultaneously, whereas a CPU has to do them sequentially. The other major factor is the memory bottleneck. Standard RAM (DDR) has high latency and low bandwidth. GPUs use specialized memory that has much higher bandwidth, allowing the data to travel to the chip fast enough to keep all those cores busy."
+
+
+
+Answer 3: The "Model Student" Answer
+"CPUs are latency-oriented and use scalar processing, which creates a bottleneck when processing the billions of parameters in an AI model. GPUs and TPUs accelerate this by using a throughput-oriented architecture with massive parallelism. They utilize specialized hardware logic, like Tensor Cores or Systolic Arrays, to execute the heavy matrix multiplications required for Deep Learning in single clock cycles. Furthermore, they bypass the bandwidth limitations of standard RAM by using High Bandwidth Memory (HBM). HBM allows data to be fed to the processor at terabytes per second, ensuring the compute units aren't left idling."

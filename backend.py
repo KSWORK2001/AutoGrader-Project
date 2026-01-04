@@ -1,0 +1,246 @@
+# backend.py
+import base64
+import json
+import tempfile
+from dataclasses import dataclass, asdict
+from typing import Any, Dict, Optional, List
+
+import ollama 
+
+SYSTEM_PROMPT = """
+You are an exam autograder.
+
+You will be given:
+- The exam question (optional).
+- One student's handwritten answer (as extracted text).
+- THREE separate expert reference answers.
+
+Your job:
+
+1. Carefully compare the student's answer to ALL THREE expert answers.
+2. Check:
+   - Does the student cover all the key points present across the expert answers?
+   - Are important examples, edge cases, formulas, definitions, or steps included?
+   - Are there any conceptual mistakes, contradictions, or missing reasoning steps?
+3. Evaluate the student's answer on a scale from 0 to 10, where:
+   - 10 = Fully correct, covers essentially all important points, very clear.
+   - 8–9 = Mostly correct, minor omissions or minor clarity issues.
+   - 6–7 = Some important points covered but noticeable gaps or issues.
+   - 3–5 = Major missing content or conceptual errors, partial understanding.
+   - 0–2 = Very little correct content, severely flawed or irrelevant.
+4. Be strict but fair. Reward correct reasoning and penalize missing critical content.
+5. Write a concise explanation of WHY you gave that score.
+6. Summarize which expert points the student covered or missed.
+
+OUTPUT FORMAT (IMPORTANT):
+Return ONLY valid JSON in the following shape:
+
+{
+  "score": <integer 0-10>,
+  "explanation": "short explanation of the grading decision",
+  "coverage_summary": "what was covered vs missing compared to the expert answers",
+  "suggestions": "what the student should improve or add to reach 10/10"
+}
+
+Do NOT include any text before or after the JSON. No markdown.
+"""
+
+
+@dataclass
+class GradeResult:
+    score: Optional[int]
+    explanation: str
+    coverage_summary: str
+    suggestions: str
+    raw_model_response: str
+
+
+class Backend:
+    """
+    This class is exposed to the JS layer via pywebview (js_api=Backend()).
+    Methods here can be called from JS as window.pywebview.api.<method>.
+    """
+
+    def __init__(self, model_name: str = "ministral-3:14b-cloud"):
+        self.model_name = model_name
+
+    # This is the function we'll call from JS: window.pywebview.api.grade_answer(payload)
+    def grade_answer(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        payload is expected to have:
+        {
+          "question": str,
+          "studentImageBase64": str,  // base64 of the handwritten image (no prefix)
+          "expert1": str,
+          "expert2": str,
+          "expert3": str
+        }
+        """
+        question = payload.get("question", "") or ""
+        expert1 = payload.get("expert1", "") or ""
+        expert2 = payload.get("expert2", "") or ""
+        expert3 = payload.get("expert3", "") or ""
+        student_image_b64 = payload.get("studentImageBase64", "")
+        student_text = payload.get("studentText", "").strip()
+
+        use_text_mode = bool(student_text)
+
+        if not use_text_mode and not student_image_b64:
+            return {"error": "No student answer provided. Upload an image or enter text."}
+
+        # Decode base64 image to a temporary file so Ollama vision can read it.
+        try:
+            image_bytes = base64.b64decode(student_image_b64)
+        except Exception as e:
+            return {
+                "error": f"Failed to decode student image base64: {e}"
+            }
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
+            tmp_img.write(image_bytes)
+            image_path = tmp_img.name
+
+        # Build the user prompt text (we also still attach the image for extraction)
+        user_prompt = self._build_user_prompt(
+            question=question,
+            expert_answers=[expert1, expert2, expert3],
+            student_text=student_text
+        )
+
+        try:
+            # Build message list dynamically depending on mode
+            messages = [
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT.strip(),
+                }
+            ]
+
+            # If student_text exists → NO image, treat this as text-only grading
+            if student_text:
+                messages.append({
+                    "role": "user",
+                    "content": user_prompt.strip(),
+                })
+
+            else:
+                # Image mode → attach the student's handwritten image
+                messages.append({
+                    "role": "user",
+                    "content": user_prompt.strip(),
+                    "images": [image_path],  # Vision input
+                })
+
+            # Call Ollama with the dynamic messages
+            response = ollama.chat(
+                model=self.model_name,
+                messages=messages,
+            )
+
+        except Exception as e:
+            return {
+                "error": f"Error calling Ollama / model: {e}"
+            }
+
+
+        raw_content = response.get("message", {}).get("content", "")
+
+        parsed = self._parse_model_json(raw_content)
+        def safe_str(value):
+            # Nothing there
+            if value is None:
+                return ""
+
+            # Already a simple string → trim & return
+            if isinstance(value, str):
+                return value.strip()
+
+            # If value is a dict, pretty format it
+            if isinstance(value, dict):
+                output = []
+                for key, items in value.items():
+                    output.append(f"{key.capitalize()}:")
+                    if isinstance(items, list):
+                        for item in items:
+                            output.append(f"  • {item}")
+                    else:
+                        output.append(f"  • {items}")
+                    output.append("")  # spacing
+                return "\n".join(output).strip()
+
+            # If value is a list → bullet list
+            if isinstance(value, list):
+                return "\n".join([f"• {item}" for item in value])
+
+            # Default fallback
+            return str(value).strip()
+
+        result = GradeResult(
+            score=parsed.get("score"),
+            explanation=safe_str(parsed.get("explanation")),
+            coverage_summary=safe_str(parsed.get("coverage_summary")),
+            suggestions=safe_str(parsed.get("suggestions")),
+            raw_model_response=raw_content,
+        )
+
+        # Return a dict – pywebview will JSON-serialize this.
+        return asdict(result)
+
+    @staticmethod
+    def _build_user_prompt(question: str, expert_answers: List[str], student_text: str = "") -> str:
+        experts_text = []
+        for i, ans in enumerate(expert_answers, start=1):
+            label = f"EXPERT ANSWER {i}"
+            experts_text.append(f"{label}:\n{ans.strip() or '[EMPTY]'}")
+
+        prompt_parts = []
+
+        if question.strip():
+            prompt_parts.append(f"QUESTION:\n{question.strip()}\n")
+
+        prompt_parts.append("\nREFERENCE EXPERT ANSWERS:\n" + "\n\n".join(experts_text))
+
+        prompt_parts.append(
+            f"""
+    If a STUDENT TEXT ANSWER is provided, use it directly:
+    STUDENT TEXT (IF ANY):
+    {student_text if student_text else "[No direct text, use the image]"}
+            
+    If no student text is provided, extract the text from the image.
+    After you have the final student answer, compare it with the expert answers and grade it.
+    Remember to output STRICTLY the JSON format requested earlier.
+    """.strip()
+        )
+
+        return "\n\n".join(prompt_parts)
+
+
+    @staticmethod
+    def _parse_model_json(raw_content: str) -> Dict[str, Any]:
+        """
+        Try to parse the model output as JSON. If it fails, wrap it as explanation.
+        """
+        try:
+            # Some models might wrap JSON in text – try to extract the first {...} block.
+            raw_content_stripped = raw_content.strip()
+            # Quick & dirty brace matching:
+            if raw_content_stripped.startswith("{") and raw_content_stripped.endswith("}"):
+                return json.loads(raw_content_stripped)
+
+            # Fallback: find first '{' and last '}'.
+            first = raw_content_stripped.find("{")
+            last = raw_content_stripped.rfind("}")
+            if first != -1 and last != -1 and last > first:
+                json_candidate = raw_content_stripped[first : last + 1]
+                return json.loads(json_candidate)
+
+        except Exception:
+            pass
+
+        # If all else fails, treat entire response as explanation
+        return {
+            "score": None,
+            "explanation": raw_content,
+            "coverage_summary": "",
+            "suggestions": "",
+        }

@@ -1,0 +1,102 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Examination AI</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <div class="app-container">
+        <header class="header">
+            <h1>Examination AI</h1>
+            <p class="subtitle">
+                Upload a student's handwritten answer (image) and three expert solutions (text files).
+                Current Model: <strong>ministral-3:14b-cloud</strong>
+            </p>
+        </header>
+
+        <main class="main">
+            <section class="panel">
+                <h2>Input</h2>
+                <form id="grade-form">
+                    <div class="form-group">
+                        <label for="question">Question (optional):</label>
+                        <textarea id="question" name="question" rows="3"
+                            placeholder="Paste the exam question here (optional, but helpful for context)"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Student Answer Input Method:</label>
+                    
+                        <div class="toggle-row">
+                            <label class="toggle-option">
+                                <input type="radio" name="answerMode" value="image" checked />
+                                <span class="toggle-label">Upload Image</span>
+                            </label>
+                    
+                            <label class="toggle-option">
+                                <input type="radio" name="answerMode" value="text" />
+                                <span class="toggle-label">Enter Text</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Image Upload Box -->
+                    <div class="form-group answer-mode-block" id="answer-image-block">
+                        <label for="student-image">Student's handwritten answer (image):</label>
+                        <input type="file" id="student-image" accept="image/*" />
+                    </div>
+                    
+                    <!-- Text Input Box -->
+                    <div class="form-group answer-mode-block hidden" id="answer-text-block">
+                        <label for="student-text">Student's typed answer:</label>
+                        <textarea id="student-text" rows="6" placeholder="Paste or type the student's answer here..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Expert answers (text files):</label>
+                        <div class="file-row">
+                            <label class="file-label">
+                                Expert 1
+                                <input type="file" id="expert1" class="expert-file" accept=".txt" />
+                            </label>
+                            <label class="file-label">
+                                Expert 2
+                                <input type="file" id="expert2" class="expert-file" accept=".txt" />
+                            </label>
+                            <label class="file-label">
+                                Expert 3
+                                <input type="file" id="expert3" class="expert-file" accept=".txt" />
+                            </label>
+                        </div>
+                        <p class="hint">
+                            You can leave some expert slots empty if you only have 1–2 references, but 3 is ideal.
+                        </p>
+                    </div>
+
+                    <div class="actions">
+                        <button type="submit" id="grade-btn">Grade Answer</button>
+                        <span id="status" class="status"></span>
+                    </div>
+                </form>
+            </section>
+
+            <section class="panel">
+                <h2>Result</h2>
+                <div id="result" class="result">
+                    <p class="placeholder">No grading yet. Fill in the form and click <strong>Grade Answer</strong>.</p>
+                </div>
+                <div class="result-actions">
+                    <button type="button" id="download-pdf-btn" disabled>Download PDF Report</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
