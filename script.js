@@ -4,6 +4,7 @@ const statusEl = document.getElementById("status");
 const resultEl = document.getElementById("result");
 const gradeBtn = document.getElementById("grade-btn");
 const downloadPdfBtn = document.getElementById("download-pdf-btn");
+const downloadCsvBtn = document.getElementById("download-csv-btn");
 const answerModeRadios = document.querySelectorAll("input[name='answerMode']");
 const answerImageBlock = document.getElementById("answer-image-block");
 const answerTextBlock = document.getElementById("answer-text-block");
@@ -231,9 +232,16 @@ function togglePdfButton(enabled) {
     }
 }
 
+function toggleCsvButton(enabled) {
+    if (downloadCsvBtn) {
+        downloadCsvBtn.disabled = !enabled;
+    }
+}
+
 function resetReportData() {
     lastReportData = null;
     togglePdfButton(false);
+    toggleCsvButton(false);
 }
 
 function setReportData(data) {
@@ -242,6 +250,66 @@ function setReportData(data) {
         generatedAt: new Date().toLocaleString(),
     };
     togglePdfButton(true);
+    toggleCsvButton(true);
+}
+
+function csvEscape(value) {
+    if (value === null || value === undefined) return "";
+    const str = String(value);
+    if (/[",\n\r]/.test(str)) {
+        return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+}
+
+function buildCsv(report) {
+    const headers = [
+        "generatedAt",
+        "mode",
+        "question",
+        "score",
+        "explanation",
+        "coverage",
+        "suggestions",
+        "raw",
+    ];
+    const row = headers.map((h) => csvEscape(report && report[h] !== undefined ? report[h] : ""));
+    return `${headers.join(",")}\n${row.join(",")}\n`;
+}
+
+if (downloadCsvBtn) {
+    downloadCsvBtn.addEventListener("click", async () => {
+        if (!lastReportData) {
+            alert("Run a grading first to generate the CSV report.");
+            return;
+        }
+
+        if (!window.pywebview || !window.pywebview.api) {
+            alert("pywebview API is not available. Are you running the desktop app?");
+            return;
+        }
+
+        try {
+            const csvText = buildCsv(lastReportData);
+            const csvBase64 = btoa(unescape(encodeURIComponent(csvText)));
+            const suggestedFilename = `examination-report-${Date.now()}.csv`;
+
+            const resp = await window.pywebview.api.save_csv_report({
+                csvBase64,
+                suggestedFilename,
+            });
+
+            if (resp && resp.error) {
+                alert(`Failed to save CSV: ${resp.error}`);
+                return;
+            }
+
+            alert(`CSV saved to: ${(resp && resp.path) || "(unknown path)"}`);
+        } catch (err) {
+            console.error(err);
+            alert(`Failed to generate CSV: ${err.message || err}`);
+        }
+    });
 }
 
 if (downloadPdfBtn) {

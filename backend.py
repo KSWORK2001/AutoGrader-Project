@@ -237,6 +237,50 @@ class Backend:
 
         return {"ok": True, "path": save_path}
 
+    def save_csv_report(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        csv_b64 = (payload.get("csvBase64", "") or "").strip()
+        suggested_filename = (payload.get("suggestedFilename", "") or "").strip()
+
+        if not csv_b64:
+            return {"error": "Missing csvBase64."}
+
+        if not suggested_filename:
+            suggested_filename = "examination-report.csv"
+        if not suggested_filename.lower().endswith(".csv"):
+            suggested_filename += ".csv"
+
+        try:
+            csv_bytes = base64.b64decode(csv_b64)
+        except Exception as e:
+            return {"error": f"Failed to decode csvBase64: {e}"}
+
+        if not webview.windows:
+            return {"error": "No active app window available to show a save dialog."}
+
+        window = webview.windows[0]
+        try:
+            save_path = window.create_file_dialog(
+                webview.SAVE_DIALOG,
+                save_filename=suggested_filename,
+                file_types=("CSV Files (*.csv)",),
+            )
+        except Exception as e:
+            return {"error": f"Failed to open save dialog: {e}"}
+
+        if not save_path:
+            return {"error": "Save cancelled."}
+
+        if isinstance(save_path, (list, tuple)):
+            save_path = save_path[0] if save_path else ""
+
+        try:
+            with open(save_path, "wb") as f:
+                f.write(csv_bytes)
+        except Exception as e:
+            return {"error": f"Failed to write CSV: {e}"}
+
+        return {"ok": True, "path": save_path}
+
     @staticmethod
     def _build_user_prompt(question: str, expert_answers: List[str], student_text: str = "") -> str:
         experts_text = []
