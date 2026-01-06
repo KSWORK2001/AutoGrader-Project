@@ -6,7 +6,6 @@ import webview
 
 from backend import Backend
 
-
 def main():
     base_dir = pathlib.Path(__file__).parent.resolve()
     index_path = base_dir / "index.html"
@@ -41,7 +40,6 @@ def main():
             traceback.print_exc()
 
     raise last_exc
-
 
 if __name__ == "__main__":
     main()

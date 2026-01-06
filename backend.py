@@ -1,11 +1,11 @@
 # backend.py
 import base64
 import json
-import tempfile
+import os
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, Optional, List
 
-import ollama 
+from openai import OpenAI
 
 SYSTEM_PROMPT = """
 You are an exam autograder.
@@ -61,8 +61,10 @@ class Backend:
     Methods here can be called from JS as window.pywebview.api.<method>.
     """
 
-    def __init__(self, model_name: str = "ministral-3:14b-cloud"):
+    def __init__(self, model_name: str = "gpt-5-nano"):
         self.model_name = model_name
+        self._api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        self._client = OpenAI(api_key=self._api_key) if self._api_key else None
 
     # This is the function we'll call from JS: window.pywebview.api.grade_answer(payload)
     def grade_answer(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -88,17 +90,14 @@ class Backend:
         if not use_text_mode and not student_image_b64:
             return {"error": "No student answer provided. Upload an image or enter text."}
 
-        # Decode base64 image to a temporary file so Ollama vision can read it.
-        try:
-            image_bytes = base64.b64decode(student_image_b64)
-        except Exception as e:
-            return {
-                "error": f"Failed to decode student image base64: {e}"
-            }
-
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
-            tmp_img.write(image_bytes)
-            image_path = tmp_img.name
+        if not use_text_mode:
+            # Validate image base64 early to fail fast with a clear error.
+            try:
+                base64.b64decode(student_image_b64)
+            except Exception as e:
+                return {
+                    "error": f"Failed to decode student image base64: {e}"
+                }
 
         # Build the user prompt text (we also still attach the image for extraction)
         user_prompt = self._build_user_prompt(
@@ -107,43 +106,50 @@ class Backend:
             student_text=student_text
         )
 
+        if not self._client:
+            return {
+                "error": "Missing OPENAI_API_KEY environment variable. Set it and restart the app."
+            }
+
         try:
-            # Build message list dynamically depending on mode
-            messages = [
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT.strip(),
-                }
-            ]
-
-            # If student_text exists → NO image, treat this as text-only grading
             if student_text:
-                messages.append({
-                    "role": "user",
-                    "content": user_prompt.strip(),
-                })
-
+                model_input = user_prompt.strip()
             else:
-                # Image mode → attach the student's handwritten image
-                messages.append({
-                    "role": "user",
-                    "content": user_prompt.strip(),
-                    "images": [image_path],  # Vision input
-                })
+                model_input = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": user_prompt.strip()},
+                            {
+                                "type": "input_image",
+                                "image_url": f"data:image/png;base64,{student_image_b64}",
+                            },
+                        ],
+                    }
+                ]
 
-            # Call Ollama with the dynamic messages
-            response = ollama.chat(
+            response = self._client.responses.create(
                 model=self.model_name,
-                messages=messages,
+                instructions=SYSTEM_PROMPT.strip(),
+                input=model_input,
             )
 
         except Exception as e:
             return {
-                "error": f"Error calling Ollama / model: {e}"
+                "error": f"Error calling OpenAI / model: {e}"
             }
 
+        raw_content = ""
+        try:
+            raw_content = response.output_text or ""
+        except Exception:
+            raw_content = ""
 
-        raw_content = response.get("message", {}).get("content", "")
+        if not raw_content:
+            try:
+                raw_content = response.output[0].content[0].text  # type: ignore[attr-defined]
+            except Exception:
+                raw_content = str(response)
 
         parsed = self._parse_model_json(raw_content)
         def safe_str(value):
