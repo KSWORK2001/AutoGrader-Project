@@ -252,15 +252,33 @@ if (downloadPdfBtn) {
         }
 
         try {
+            if (!window.pywebview || !window.pywebview.api) {
+                alert("pywebview API is not available. Are you running the desktop app?");
+                return;
+            }
+
             const pdfBlob = createSimplePdf(lastReportData);
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(pdfBlob);
-            link.href = url;
-            link.download = `examination-report-${Date.now()}.pdf`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            pdfBlob.arrayBuffer().then(async (buffer) => {
+                const bytes = new Uint8Array(buffer);
+                let binary = "";
+                for (let i = 0; i < bytes.length; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                const pdfBase64 = btoa(binary);
+                const suggestedFilename = `examination-report-${Date.now()}.pdf`;
+
+                const resp = await window.pywebview.api.save_pdf_report({
+                    pdfBase64,
+                    suggestedFilename,
+                });
+
+                if (resp && resp.error) {
+                    alert(`Failed to save PDF: ${resp.error}`);
+                    return;
+                }
+
+                alert(`PDF saved to: ${(resp && resp.path) || "(unknown path)"}`);
+            });
         } catch (err) {
             console.error(err);
             alert(`Failed to generate PDF: ${err.message || err}`);

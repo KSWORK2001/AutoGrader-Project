@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, Optional, List
 
+import webview
 from openai import OpenAI
 
 SYSTEM_PROMPT = """
@@ -191,6 +192,50 @@ class Backend:
 
         # Return a dict – pywebview will JSON-serialize this.
         return asdict(result)
+
+    def save_pdf_report(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        pdf_b64 = (payload.get("pdfBase64", "") or "").strip()
+        suggested_filename = (payload.get("suggestedFilename", "") or "").strip()
+
+        if not pdf_b64:
+            return {"error": "Missing pdfBase64."}
+
+        if not suggested_filename:
+            suggested_filename = "examination-report.pdf"
+        if not suggested_filename.lower().endswith(".pdf"):
+            suggested_filename += ".pdf"
+
+        try:
+            pdf_bytes = base64.b64decode(pdf_b64)
+        except Exception as e:
+            return {"error": f"Failed to decode pdfBase64: {e}"}
+
+        if not webview.windows:
+            return {"error": "No active app window available to show a save dialog."}
+
+        window = webview.windows[0]
+        try:
+            save_path = window.create_file_dialog(
+                webview.SAVE_DIALOG,
+                save_filename=suggested_filename,
+                file_types=("PDF Files (*.pdf)",),
+            )
+        except Exception as e:
+            return {"error": f"Failed to open save dialog: {e}"}
+
+        if not save_path:
+            return {"error": "Save cancelled."}
+
+        if isinstance(save_path, (list, tuple)):
+            save_path = save_path[0] if save_path else ""
+
+        try:
+            with open(save_path, "wb") as f:
+                f.write(pdf_bytes)
+        except Exception as e:
+            return {"error": f"Failed to write PDF: {e}"}
+
+        return {"ok": True, "path": save_path}
 
     @staticmethod
     def _build_user_prompt(question: str, expert_answers: List[str], student_text: str = "") -> str:
