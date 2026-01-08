@@ -4,45 +4,45 @@ import json
 import tempfile
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, Optional, List
-
-import ollama 
-
+import os
+from dotenv import load_dotenv
+from openai import OpenAI 
+load_dotenv()
+openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 SYSTEM_PROMPT = """
-You are an exam autograder.
+You are an AI exam evaluator acting like a strict university examiner.
 
-You will be given:
-- The exam question (optional).
-- One student's handwritten answer (as extracted text).
-- THREE separate expert reference answers.
+You will receive:
+- The exam question (optional)
+- One student's handwritten answer (image or text)
+- Three expert reference answers
 
-Your job:
+Your tasks:
+1. Understand the student's answer fully.
+2. Compare it against ALL expert answers.
+3. Identify:
+   - Correct concepts
+   - Missing points
+   - Incorrect or vague explanations
+4. Assign a score from 0 to 10.
+5. Clearly justify the score.
 
-1. Carefully compare the student's answer to ALL THREE expert answers.
-2. Check:
-   - Does the student cover all the key points present across the expert answers?
-   - Are important examples, edge cases, formulas, definitions, or steps included?
-   - Are there any conceptual mistakes, contradictions, or missing reasoning steps?
-3. Evaluate the student's answer on a scale from 0 to 10, where:
-   - 10 = Fully correct, covers essentially all important points, very clear.
-   - 8–9 = Mostly correct, minor omissions or minor clarity issues.
-   - 6–7 = Some important points covered but noticeable gaps or issues.
-   - 3–5 = Major missing content or conceptual errors, partial understanding.
-   - 0–2 = Very little correct content, severely flawed or irrelevant.
-4. Be strict but fair. Reward correct reasoning and penalize missing critical content.
-5. Write a concise explanation of WHY you gave that score.
-6. Summarize which expert points the student covered or missed.
+IMPORTANT OUTPUT RULES:
+- Always explain WHY marks were deducted.
+- Explicitly mention which expert points were:
+  - Covered
+  - Partially covered
+  - Missing
+- Provide constructive suggestions to improve the answer.
 
-OUTPUT FORMAT (IMPORTANT):
-Return ONLY valid JSON in the following shape:
+Return STRICT JSON only in this format:
 
 {
-  "score": <integer 0-10>,
-  "explanation": "short explanation of the grading decision",
-  "coverage_summary": "what was covered vs missing compared to the expert answers",
-  "suggestions": "what the student should improve or add to reach 10/10"
+  "score": <integer>,
+  "explanation": "Detailed explanation of evaluation",
+  "coverage_summary": "Which expert points were covered or missed",
+  "suggestions": "Concrete suggestions for improvement"
 }
-
-Do NOT include any text before or after the JSON. No markdown.
 """
 
 
@@ -61,8 +61,8 @@ class Backend:
     Methods here can be called from JS as window.pywebview.api.<method>.
     """
 
-    def __init__(self, model_name: str = "ministral-3:14b-cloud"):
-        self.model_name = model_name
+    def __init__(self):
+        pass
 
     # This is the function we'll call from JS: window.pywebview.api.grade_answer(payload)
     def grade_answer(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -87,19 +87,6 @@ class Backend:
 
         if not use_text_mode and not student_image_b64:
             return {"error": "No student answer provided. Upload an image or enter text."}
-
-        # Decode base64 image to a temporary file so Ollama vision can read it.
-        try:
-            image_bytes = base64.b64decode(student_image_b64)
-        except Exception as e:
-            return {
-                "error": f"Failed to decode student image base64: {e}"
-            }
-
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
-            tmp_img.write(image_bytes)
-            image_path = tmp_img.name
-
         # Build the user prompt text (we also still attach the image for extraction)
         user_prompt = self._build_user_prompt(
             question=question,
@@ -108,43 +95,53 @@ class Backend:
         )
 
         try:
-            # Build message list dynamically depending on mode
-            messages = [
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT.strip(),
-                }
-            ]
-
-            # If student_text exists → NO image, treat this as text-only grading
+            # TEXT MODE (Enter Text selected)
             if student_text:
-                messages.append({
-                    "role": "user",
-                    "content": user_prompt.strip(),
-                })
+                response = openai_client.responses.create(
+                    model="gpt-5-mini",
+                    input=[
+                        {
+                            "role": "system",
+                            "content": SYSTEM_PROMPT.strip()
+                        },
+                        {
+                            "role": "user",
+                            "content": user_prompt.strip()
+                        }
+                    ]
+                )
 
+            # IMAGE MODE (Upload Image selected)
             else:
-                # Image mode → attach the student's handwritten image
-                messages.append({
-                    "role": "user",
-                    "content": user_prompt.strip(),
-                    "images": [image_path],  # Vision input
-                })
+                response = openai_client.responses.create(
+                    model="gpt-5-mini",
+                    input=[
+                        {
+                            "role": "system",
+                            "content": SYSTEM_PROMPT.strip()
+                        },
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": user_prompt.strip()
+                                },
+                                {
+                                    "type": "input_image",
+                                    "image_url": f"data:image/png;base64,{student_image_b64}"
+                                }
+                            ]
+                        }
+                    ]
+                )
 
-            # Call Ollama with the dynamic messages
-            response = ollama.chat(
-                model=self.model_name,
-                messages=messages,
-            )
+            raw_content = response.output_text
 
         except Exception as e:
             return {
-                "error": f"Error calling Ollama / model: {e}"
+                "error": f"Error calling OpenAI model: {e}"
             }
-
-
-        raw_content = response.get("message", {}).get("content", "")
-
         parsed = self._parse_model_json(raw_content)
         def safe_str(value):
             # Nothing there
