@@ -2,10 +2,14 @@
 import base64
 import json
 import tempfile
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict           #???
 from typing import Any, Dict, Optional, List
-
+from openai import OpenAI
+from dotenv import load_dotenv
+import os
 import ollama 
+
+load_dotenv()
 
 SYSTEM_PROMPT = """
 You are an exam autograder.
@@ -61,7 +65,8 @@ class Backend:
     Methods here can be called from JS as window.pywebview.api.<method>.
     """
 
-    def __init__(self, model_name: str = "ministral-3:14b-cloud"):
+    def __init__(self, model_name: str = "gpt-5-mini"):
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.model_name = model_name
 
     # This is the function we'll call from JS: window.pywebview.api.grade_answer(payload)
@@ -131,19 +136,19 @@ class Backend:
                     "images": [image_path],  # Vision input
                 })
 
-            # Call Ollama with the dynamic messages
-            response = ollama.chat(
+            # Call Ollama with the dynamic messages #Changed ollama to self.client
+            response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
             )
 
         except Exception as e:
             return {
-                "error": f"Error calling Ollama / model: {e}"
+                "error": f"Error calling OpenAI / model: {e}"
             }
 
 
-        raw_content = response.get("message", {}).get("content", "")
+        raw_content = response.choices[0].message.content.strip()
 
         parsed = self._parse_model_json(raw_content)
         def safe_str(value):
